@@ -35,6 +35,7 @@ export const menuItemsAPI = {
       .insert([{
         name: menuItem.name,
         price: menuItem.price,
+        cost: menuItem.cost || 0,
         category: menuItem.category,
         description: menuItem.description,
         image_url: menuItem.image,
@@ -54,6 +55,7 @@ export const menuItemsAPI = {
       .update({
         name: menuItem.name,
         price: menuItem.price,
+        cost: menuItem.cost || 0,
         category: menuItem.category,
         description: menuItem.description,
         image_url: menuItem.image,
@@ -224,8 +226,10 @@ export const ordersAPI = {
       menu_item_id: item.id,
       menu_item_name: item.name,
       menu_item_price: item.price,
+      menu_item_cost: item.cost || 0,
       quantity: item.quantity,
-      subtotal: item.price * item.quantity
+      subtotal: item.price * item.quantity,
+      total_cost: (item.cost || 0) * item.quantity
     }));
 
     const { error: itemsError } = await supabase
@@ -305,24 +309,83 @@ export const statsAPI = {
   // ดึงสถิติแบบสรุป
   async getSummaryStats(startDate, endDate) {
     const { data, error } = await supabase
-      .from('orders')
-      .select('total, discount, order_date')
-      .gte('order_date', startDate)
-      .lte('order_date', endDate);
+      .from('daily_stats')
+      .select('*')
+      .gte('stat_date', startDate)
+      .lte('stat_date', endDate)
+      .order('stat_date', { ascending: true });
     
     if (error) throw error;
 
-    const totalOrders = data.length;
-    const totalRevenue = data.reduce((sum, order) => sum + order.total, 0);
-    const totalDiscount = data.reduce((sum, order) => sum + order.discount, 0);
+    if (data.length === 0) {
+      return {
+        totalOrders: 0,
+        totalRevenue: 0,
+        totalCost: 0,
+        grossProfit: 0,
+        totalDiscount: 0,
+        netProfit: 0,
+        avgOrderValue: 0,
+        profitMargin: 0
+      };
+    }
+
+    const totalOrders = data.reduce((sum, stat) => sum + stat.total_orders, 0);
+    const totalRevenue = data.reduce((sum, stat) => sum + parseFloat(stat.total_revenue), 0);
+    const totalCost = data.reduce((sum, stat) => sum + parseFloat(stat.total_cost), 0);
+    const grossProfit = data.reduce((sum, stat) => sum + parseFloat(stat.gross_profit), 0);
+    const totalDiscount = data.reduce((sum, stat) => sum + parseFloat(stat.total_discount), 0);
+    const netProfit = data.reduce((sum, stat) => sum + parseFloat(stat.net_profit), 0);
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    const profitMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
 
     return {
       totalOrders,
       totalRevenue,
+      totalCost,
+      grossProfit,
       totalDiscount,
-      avgOrderValue
+      netProfit,
+      avgOrderValue,
+      profitMargin,
+      dailyStats: data
     };
+  },
+
+  // วิเคราะห์กำไร
+  async getProfitAnalysis(startDate, endDate) {
+    const { data, error } = await supabase
+      .rpc('get_profit_analysis', {
+        start_date: startDate,
+        end_date: endDate
+      });
+    
+    if (error) throw error;
+    return data[0] || null;
+  },
+
+  // เมนูที่ให้กำไรมากที่สุด
+  async getMostProfitableItems(daysBack = 7, limitCount = 10) {
+    const { data, error } = await supabase
+      .rpc('get_most_profitable_items', {
+        days_back: daysBack,
+        limit_count: limitCount
+      });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // กำไรตามหมวดหมู่
+  async getProfitByCategory(startDate, endDate) {
+    const { data, error } = await supabase
+      .rpc('get_sales_by_category', {
+        start_date: startDate,
+        end_date: endDate
+      });
+    
+    if (error) throw error;
+    return data;
   }
 };
 

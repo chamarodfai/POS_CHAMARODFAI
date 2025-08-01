@@ -17,12 +17,14 @@ CREATE TABLE IF NOT EXISTS menu_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(200) NOT NULL,
   price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
+  cost DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (cost >= 0),
   category VARCHAR(100) NOT NULL,
   description TEXT,
   image_url TEXT,
   available BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  CONSTRAINT valid_profit CHECK (price >= cost)
 );
 
 -- 3. ตารางโปรโมชั่น (Promotions)
@@ -66,8 +68,10 @@ CREATE TABLE IF NOT EXISTS order_items (
   menu_item_id UUID REFERENCES menu_items(id),
   menu_item_name VARCHAR(200) NOT NULL,
   menu_item_price DECIMAL(10,2) NOT NULL CHECK (menu_item_price >= 0),
+  menu_item_cost DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (menu_item_cost >= 0),
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   subtotal DECIMAL(10,2) NOT NULL CHECK (subtotal >= 0),
+  total_cost DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (total_cost >= 0),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -77,8 +81,12 @@ CREATE TABLE IF NOT EXISTS daily_stats (
   stat_date DATE NOT NULL UNIQUE,
   total_orders INTEGER DEFAULT 0,
   total_revenue DECIMAL(12,2) DEFAULT 0,
+  total_cost DECIMAL(12,2) DEFAULT 0,
+  gross_profit DECIMAL(12,2) DEFAULT 0,
   total_discount DECIMAL(12,2) DEFAULT 0,
+  net_profit DECIMAL(12,2) DEFAULT 0,
   avg_order_value DECIMAL(10,2) DEFAULT 0,
+  profit_margin DECIMAL(5,2) DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -127,7 +135,7 @@ CREATE OR REPLACE TRIGGER update_daily_stats_updated_at
   BEFORE UPDATE ON daily_stats 
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Function สำหรับอัปเดตสถิติรายวัน
+-- Function สำหรับอัปเดตสถิติรายวัน (รวมกำไร)
 CREATE OR REPLACE FUNCTION update_daily_stats(target_date DATE DEFAULT CURRENT_DATE)
 RETURNS VOID AS $$
 BEGIN
@@ -135,23 +143,47 @@ BEGIN
     stat_date,
     total_orders,
     total_revenue,
+    total_cost,
+    gross_profit,
     total_discount,
-    avg_order_value
+    net_profit,
+    avg_order_value,
+    profit_margin
   )
   SELECT 
     target_date,
     COUNT(*) as total_orders,
-    COALESCE(SUM(total), 0) as total_revenue,
-    COALESCE(SUM(discount), 0) as total_discount,
-    COALESCE(AVG(total), 0) as avg_order_value
-  FROM orders 
-  WHERE order_date = target_date
+    COALESCE(SUM(o.total), 0) as total_revenue,
+    COALESCE(SUM(
+      (SELECT SUM(oi.total_cost) FROM order_items oi WHERE oi.order_id = o.id)
+    ), 0) as total_cost,
+    COALESCE(SUM(o.total), 0) - COALESCE(SUM(
+      (SELECT SUM(oi.total_cost) FROM order_items oi WHERE oi.order_id = o.id)
+    ), 0) as gross_profit,
+    COALESCE(SUM(o.discount), 0) as total_discount,
+    COALESCE(SUM(o.total), 0) - COALESCE(SUM(
+      (SELECT SUM(oi.total_cost) FROM order_items oi WHERE oi.order_id = o.id)
+    ), 0) - COALESCE(SUM(o.discount), 0) as net_profit,
+    COALESCE(AVG(o.total), 0) as avg_order_value,
+    CASE 
+      WHEN SUM(o.total) > 0 THEN 
+        ((SUM(o.total) - COALESCE(SUM(
+          (SELECT SUM(oi.total_cost) FROM order_items oi WHERE oi.order_id = o.id)
+        ), 0)) / SUM(o.total)) * 100
+      ELSE 0 
+    END as profit_margin
+  FROM orders o
+  WHERE o.order_date = target_date
   ON CONFLICT (stat_date) 
   DO UPDATE SET
     total_orders = EXCLUDED.total_orders,
     total_revenue = EXCLUDED.total_revenue,
+    total_cost = EXCLUDED.total_cost,
+    gross_profit = EXCLUDED.gross_profit,
     total_discount = EXCLUDED.total_discount,
+    net_profit = EXCLUDED.net_profit,
     avg_order_value = EXCLUDED.avg_order_value,
+    profit_margin = EXCLUDED.profit_margin,
     updated_at = NOW();
 END;
 $$ LANGUAGE plpgsql;
@@ -181,7 +213,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function สำหรับดึงข้อมูลยอดขายตามหมวดหมู่
+-- Function สำหรับดึงข้อมูลยอดขายตามหมวดหมู่ (รวมกำไร)
 CREATE OR REPLACE FUNCTION get_sales_by_category(
   start_date DATE DEFAULT CURRENT_DATE - 7,
   end_date DATE DEFAULT CURRENT_DATE
@@ -189,20 +221,104 @@ CREATE OR REPLACE FUNCTION get_sales_by_category(
 RETURNS TABLE (
   category VARCHAR(100),
   total_quantity BIGINT,
-  total_revenue DECIMAL(12,2)
+  total_revenue DECIMAL(12,2),
+  total_cost DECIMAL(12,2),
+  gross_profit DECIMAL(12,2),
+  profit_margin DECIMAL(5,2)
 ) AS $$
 BEGIN
   RETURN QUERY
   SELECT 
     mi.category,
     SUM(oi.quantity) as total_quantity,
-    SUM(oi.subtotal) as total_revenue
+    SUM(oi.subtotal) as total_revenue,
+    SUM(oi.total_cost) as total_cost,
+    SUM(oi.subtotal) - SUM(oi.total_cost) as gross_profit,
+    CASE 
+      WHEN SUM(oi.subtotal) > 0 THEN 
+        ((SUM(oi.subtotal) - SUM(oi.total_cost)) / SUM(oi.subtotal)) * 100
+      ELSE 0 
+    END as profit_margin
   FROM order_items oi
   JOIN orders o ON oi.order_id = o.id
   LEFT JOIN menu_items mi ON oi.menu_item_id = mi.id
   WHERE o.order_date BETWEEN start_date AND end_date
   GROUP BY mi.category
-  ORDER BY total_revenue DESC;
+  ORDER BY gross_profit DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function สำหรับวิเคราะห์กำไรขาดทุน
+CREATE OR REPLACE FUNCTION get_profit_analysis(
+  start_date DATE DEFAULT CURRENT_DATE - 30,
+  end_date DATE DEFAULT CURRENT_DATE
+)
+RETURNS TABLE (
+  analysis_period TEXT,
+  total_revenue DECIMAL(12,2),
+  total_cost DECIMAL(12,2),
+  gross_profit DECIMAL(12,2),
+  total_discount DECIMAL(12,2),
+  net_profit DECIMAL(12,2),
+  profit_margin DECIMAL(5,2),
+  loss_days INTEGER,
+  profitable_days INTEGER
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    start_date::TEXT || ' to ' || end_date::TEXT as analysis_period,
+    SUM(ds.total_revenue) as total_revenue,
+    SUM(ds.total_cost) as total_cost,
+    SUM(ds.gross_profit) as gross_profit,
+    SUM(ds.total_discount) as total_discount,
+    SUM(ds.net_profit) as net_profit,
+    CASE 
+      WHEN SUM(ds.total_revenue) > 0 THEN 
+        (SUM(ds.gross_profit) / SUM(ds.total_revenue)) * 100
+      ELSE 0 
+    END as profit_margin,
+    COUNT(CASE WHEN ds.net_profit < 0 THEN 1 END)::INTEGER as loss_days,
+    COUNT(CASE WHEN ds.net_profit > 0 THEN 1 END)::INTEGER as profitable_days
+  FROM daily_stats ds
+  WHERE ds.stat_date BETWEEN start_date AND end_date;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function สำหรับหาเมนูที่ให้กำไรมากที่สุด
+CREATE OR REPLACE FUNCTION get_most_profitable_items(
+  days_back INTEGER DEFAULT 7,
+  limit_count INTEGER DEFAULT 10
+)
+RETURNS TABLE (
+  menu_item_name VARCHAR(200),
+  total_quantity BIGINT,
+  total_revenue DECIMAL(12,2),
+  total_cost DECIMAL(12,2),
+  gross_profit DECIMAL(12,2),
+  profit_per_unit DECIMAL(10,2),
+  profit_margin DECIMAL(5,2)
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    oi.menu_item_name,
+    SUM(oi.quantity) as total_quantity,
+    SUM(oi.subtotal) as total_revenue,
+    SUM(oi.total_cost) as total_cost,
+    SUM(oi.subtotal) - SUM(oi.total_cost) as gross_profit,
+    (SUM(oi.subtotal) - SUM(oi.total_cost)) / SUM(oi.quantity) as profit_per_unit,
+    CASE 
+      WHEN SUM(oi.subtotal) > 0 THEN 
+        ((SUM(oi.subtotal) - SUM(oi.total_cost)) / SUM(oi.subtotal)) * 100
+      ELSE 0 
+    END as profit_margin
+  FROM order_items oi
+  JOIN orders o ON oi.order_id = o.id
+  WHERE o.order_date >= CURRENT_DATE - days_back
+  GROUP BY oi.menu_item_name
+  ORDER BY gross_profit DESC, profit_margin DESC
+  LIMIT limit_count;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -225,7 +341,7 @@ CREATE OR REPLACE TRIGGER trigger_orders_stats
 -- VIEWS สำหรับรายงาน
 -- ================================
 
--- View สำหรับออเดอร์พร้อมรายละเอียด
+-- View สำหรับออเดอร์พร้อมรายละเอียด (รวมกำไร)
 CREATE OR REPLACE VIEW order_details AS
 SELECT 
   o.id as order_id,
@@ -237,32 +353,48 @@ SELECT
   o.promotion_name,
   oi.menu_item_name,
   oi.menu_item_price,
+  oi.menu_item_cost,
   oi.quantity,
-  oi.subtotal as item_subtotal
+  oi.subtotal as item_subtotal,
+  oi.total_cost as item_total_cost,
+  (oi.subtotal - oi.total_cost) as item_profit,
+  CASE 
+    WHEN oi.subtotal > 0 THEN 
+      ((oi.subtotal - oi.total_cost) / oi.subtotal) * 100
+    ELSE 0 
+  END as item_profit_margin
 FROM orders o
 LEFT JOIN order_items oi ON o.id = oi.order_id
 ORDER BY o.order_time DESC, oi.menu_item_name;
 
--- View สำหรับสถิติรายเดือน
+-- View สำหรับสถิติรายเดือน (รวมกำไร)
 CREATE OR REPLACE VIEW monthly_stats AS
 SELECT 
   DATE_TRUNC('month', stat_date) as month,
   SUM(total_orders) as total_orders,
   SUM(total_revenue) as total_revenue,
+  SUM(total_cost) as total_cost,
+  SUM(gross_profit) as gross_profit,
   SUM(total_discount) as total_discount,
-  AVG(avg_order_value) as avg_order_value
+  SUM(net_profit) as net_profit,
+  AVG(avg_order_value) as avg_order_value,
+  AVG(profit_margin) as avg_profit_margin
 FROM daily_stats
 GROUP BY DATE_TRUNC('month', stat_date)
 ORDER BY month DESC;
 
--- View สำหรับสถิติรายปี (แก้ไขแล้ว)
+-- View สำหรับสถิติรายปี (รวมกำไร)
 CREATE OR REPLACE VIEW yearly_stats AS
 SELECT 
   DATE_TRUNC('year', stat_date) as year,
   SUM(total_orders) as total_orders,
   SUM(total_revenue) as total_revenue,
+  SUM(total_cost) as total_cost,
+  SUM(gross_profit) as gross_profit,
   SUM(total_discount) as total_discount,
-  AVG(avg_order_value) as avg_order_value
+  SUM(net_profit) as net_profit,
+  AVG(avg_order_value) as avg_order_value,
+  AVG(profit_margin) as avg_profit_margin
 FROM daily_stats
 GROUP BY DATE_TRUNC('year', stat_date)
 ORDER BY year DESC;
@@ -279,13 +411,16 @@ INSERT INTO categories (name, description) VALUES
 ('ของหวาน', 'ไอศกรีม เค้ก ฯลฯ')
 ON CONFLICT (name) DO NOTHING;
 
--- เพิ่มเมนูตัวอย่าง
-INSERT INTO menu_items (name, price, category, description, available) VALUES
-('ข้าวผัดกุ้ง', 80.00, 'อาหารจานเดียว', 'ข้าวผัดกุ้งสดใส่ไข่', true),
-('ต้มยำกุ้ง', 120.00, 'ต้มยำ', 'ต้มยำกุ้งน้ำใส รสเปรียวหวาน', true),
-('น้ำส้มคั้น', 30.00, 'เครื่องดื่ม', 'น้ำส้มคั้นสด 100%', true),
-('ข้าวผัดหมู', 70.00, 'อาหารจานเดียว', 'ข้าวผัดหมูใส่ไข่', true),
-('กาแฟดำ', 25.00, 'เครื่องดื่ม', 'กาแฟดำร้อน', true)
+-- เพิ่มเมนูตัวอย่าง (รวมต้นทุน)
+INSERT INTO menu_items (name, price, cost, category, description, available) VALUES
+('ข้าวผัดกุ้ง', 80.00, 45.00, 'อาหารจานเดียว', 'ข้าวผัดกุ้งสดใส่ไข่', true),
+('ต้มยำกุ้ง', 120.00, 65.00, 'ต้มยำ', 'ต้มยำกุ้งน้ำใส รสเปรียวหวาน', true),
+('น้ำส้มคั้น', 30.00, 12.00, 'เครื่องดื่ม', 'น้ำส้มคั้นสด 100%', true),
+('ข้าวผัดหมู', 70.00, 35.00, 'อาหารจานเดียว', 'ข้าวผัดหมูใส่ไข่', true),
+('กาแฟดำ', 25.00, 8.00, 'เครื่องดื่ม', 'กาแฟดำร้อน', true),
+('ผัดไทย', 75.00, 40.00, 'อาหารจานเดียว', 'ผัดไทยกุ้งสด รสชาติต้นตำรับ', true),
+('ส้มตำ', 50.00, 20.00, 'อาหารจานเดียว', 'ส้มตำไทย เผ็ดร้อน', true),
+('ไอศกรีมวานิลลา', 35.00, 15.00, 'ของหวาน', 'ไอศกรีมวานิลลาเข้มข้น', true)
 ON CONFLICT DO NOTHING;
 
 -- เพิ่มโปรโมชั่นตัวอย่าง
@@ -300,3 +435,27 @@ SELECT 'Tables created: ' || count(*) as table_count
 FROM information_schema.tables 
 WHERE table_schema = 'public' 
   AND table_name IN ('categories', 'menu_items', 'promotions', 'orders', 'order_items', 'daily_stats');
+
+-- ================================
+-- ตัวอย่างการใช้งาน Functions กำไร
+-- ================================
+
+-- ตัวอย่างการดูวิเคราะห์กำไร 30 วันล่าสุด
+-- SELECT * FROM get_profit_analysis(CURRENT_DATE - 30, CURRENT_DATE);
+
+-- ตัวอย่างการดูเมนูที่ให้กำไรมากที่สุด
+-- SELECT * FROM get_most_profitable_items(7, 5);
+
+-- ตัวอย่างการดูกำไรตามหมวดหมู่
+-- SELECT * FROM get_sales_by_category(CURRENT_DATE - 7, CURRENT_DATE);
+
+-- ตัวอย่างการดูข้อมูลกำไรรายวัน
+-- SELECT 
+--   stat_date,
+--   total_revenue,
+--   total_cost,
+--   gross_profit,
+--   profit_margin || '%' as profit_percentage
+-- FROM daily_stats 
+-- ORDER BY stat_date DESC 
+-- LIMIT 10;
