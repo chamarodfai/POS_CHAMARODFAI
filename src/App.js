@@ -7,6 +7,7 @@ import MenuManagement from './pages/MenuManagement';
 import PromotionManagement from './pages/PromotionManagement';
 import Dashboard from './pages/Dashboard';
 import ConnectionStatus from './components/ConnectionStatus';
+import SupabaseStatus from './components/SupabaseStatus';
 import './App.css';
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
     <AppProvider>
       <Router>
         <div className="App">
+          <SupabaseStatus />
           <ConnectionStatus />
           <Navigation />
           <main className="main-content">

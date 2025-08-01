@@ -189,6 +189,9 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function สำหรับดึงข้อมูลขายดี
+-- Drop existing function if it exists
+DROP FUNCTION IF EXISTS get_top_selling_items(INTEGER, INTEGER);
+
 CREATE OR REPLACE FUNCTION get_top_selling_items(
   days_back INTEGER DEFAULT 7,
   limit_count INTEGER DEFAULT 5
@@ -214,6 +217,9 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function สำหรับดึงข้อมูลยอดขายตามหมวดหมู่ (รวมกำไร)
+-- Drop existing function if it exists with different signature
+DROP FUNCTION IF EXISTS get_sales_by_category(date, date);
+
 CREATE OR REPLACE FUNCTION get_sales_by_category(
   start_date DATE DEFAULT CURRENT_DATE - 7,
   end_date DATE DEFAULT CURRENT_DATE
@@ -249,6 +255,9 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function สำหรับวิเคราะห์กำไรขาดทุน
+-- Drop existing function if it exists
+DROP FUNCTION IF EXISTS get_profit_analysis(DATE, DATE);
+
 CREATE OR REPLACE FUNCTION get_profit_analysis(
   start_date DATE DEFAULT CURRENT_DATE - 30,
   end_date DATE DEFAULT CURRENT_DATE
@@ -286,6 +295,9 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function สำหรับหาเมนูที่ให้กำไรมากที่สุด
+-- Drop existing function if it exists
+DROP FUNCTION IF EXISTS get_most_profitable_items(INTEGER, INTEGER);
+
 CREATE OR REPLACE FUNCTION get_most_profitable_items(
   days_back INTEGER DEFAULT 7,
   limit_count INTEGER DEFAULT 10
