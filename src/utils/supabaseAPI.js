@@ -225,6 +225,34 @@ export const ordersAPI = {
     }
   },
 
+  // ดึงออเดอร์ล่าสุด
+  async getRecent(limit = 50) {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items (*)
+        `)
+        .order('order_time', { ascending: false })
+        .limit(limit);
+      
+      if (error) {
+        console.error('Error fetching recent orders:', error);
+        // ถ้า error เป็นเรื่อง RLS หรือ permissions ให้ return array ว่าง
+        if (error.code === 'PGRST301' || error.message.includes('insufficient')) {
+          console.warn('Recent orders access restricted, returning empty array');
+          return [];
+        }
+        throw error;
+      }
+      return data || [];
+    } catch (error) {
+      console.error('Recent orders API error:', error);
+      return []; // fallback to empty array
+    }
+  },
+
   // สร้างออเดอร์ใหม่
   async create(order) {
     // เริ่ม transaction
