@@ -172,33 +172,57 @@ export const promotionsAPI = {
 export const ordersAPI = {
   // ดึงออเดอร์ทั้งหมด
   async getAll(limit = 100) {
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        *,
-        order_items (*)
-      `)
-      .order('order_time', { ascending: false })
-      .limit(limit);
-    
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items (*)
+        `)
+        .order('order_time', { ascending: false })
+        .limit(limit);
+      
+      if (error) {
+        console.error('Error fetching orders:', error);
+        // ถ้า error เป็นเรื่อง RLS หรือ permissions ให้ return array ว่าง
+        if (error.code === 'PGRST301' || error.message.includes('insufficient')) {
+          console.warn('Orders access restricted, returning empty array');
+          return [];
+        }
+        throw error;
+      }
+      return data || [];
+    } catch (error) {
+      console.error('Orders API error:', error);
+      return []; // fallback to empty array
+    }
   },
 
   // ดึงออเดอร์ตามช่วงวันที่
   async getByDateRange(startDate, endDate) {
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        *,
-        order_items (*)
-      `)
-      .gte('order_date', startDate)
-      .lte('order_date', endDate)
-      .order('order_time', { ascending: false });
-    
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items (*)
+        `)
+        .gte('order_date', startDate)
+        .lte('order_date', endDate)
+        .order('order_time', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching orders by date range:', error);
+        if (error.code === 'PGRST301' || error.message.includes('insufficient')) {
+          return [];
+        }
+        throw error;
+      }
+      return data || [];
+    } catch (error) {
+      console.error('Orders by date range API error:', error);
+      return [];
+    }
   },
 
   // สร้างออเดอร์ใหม่

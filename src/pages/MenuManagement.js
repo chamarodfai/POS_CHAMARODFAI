@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp } from '../context/SupabaseAppContext';
 import './MenuManagement.css';
 
 function MenuManagement() {
-  const { state, dispatch } = useApp();
+  const { state, addMenuItem, updateMenuItem, deleteMenuItem } = useApp();
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     price: '',
+    cost: '',
     category: '',
     description: '',
     image: '',
@@ -25,7 +27,7 @@ function MenuManagement() {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!formData.name || !formData.price || !formData.category) {
@@ -33,30 +35,40 @@ function MenuManagement() {
       return;
     }
 
-    const itemData = {
-      ...formData,
-      price: parseFloat(formData.price)
-    };
+    setIsLoading(true);
+    
+    try {
+      const itemData = {
+        ...formData,
+        price: parseFloat(formData.price),
+        cost: parseFloat(formData.cost) || 0
+      };
 
-    if (editingItem) {
-      dispatch({ 
-        type: 'UPDATE_MENU_ITEM', 
-        payload: { ...itemData, id: editingItem.id }
+      if (editingItem) {
+        await updateMenuItem(editingItem.id, itemData);
+        setEditingItem(null);
+        alert('แก้ไขเมนูสำเร็จ!');
+      } else {
+        await addMenuItem(itemData);
+        setIsAddingItem(false);
+        alert('เพิ่มเมนูสำเร็จ!');
+      }
+
+      setFormData({
+        name: '',
+        price: '',
+        cost: '',
+        category: '',
+        description: '',
+        image: '',
+        available: true
       });
-      setEditingItem(null);
-    } else {
-      dispatch({ type: 'ADD_MENU_ITEM', payload: itemData });
-      setIsAddingItem(false);
+    } catch (error) {
+      console.error('Error saving menu item:', error);
+      alert('เกิดข้อผิดพลาด: ' + error.message);
+    } finally {
+      setIsLoading(false);
     }
-
-    setFormData({
-      name: '',
-      price: '',
-      category: '',
-      description: '',
-      image: '',
-      available: true
-    });
   };
 
   const handleEdit = (item) => {
@@ -64,6 +76,7 @@ function MenuManagement() {
     setFormData({
       name: item.name,
       price: item.price.toString(),
+      cost: item.cost ? item.cost.toString() : '',
       category: item.category,
       description: item.description,
       image: item.image,
@@ -72,9 +85,18 @@ function MenuManagement() {
     setIsAddingItem(true);
   };
 
-  const handleDelete = (itemId) => {
+  const handleDelete = async (itemId) => {
     if (window.confirm('คุณต้องการลบรายการนี้หรือไม่?')) {
-      dispatch({ type: 'DELETE_MENU_ITEM', payload: itemId });
+      setIsLoading(true);
+      try {
+        await deleteMenuItem(itemId);
+        alert('ลบเมนูสำเร็จ!');
+      } catch (error) {
+        console.error('Error deleting menu item:', error);
+        alert('เกิดข้อผิดพลาดในการลบเมนู: ' + error.message);
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -84,6 +106,7 @@ function MenuManagement() {
     setFormData({
       name: '',
       price: '',
+      cost: '',
       category: '',
       description: '',
       image: '',
@@ -91,11 +114,19 @@ function MenuManagement() {
     });
   };
 
-  const toggleAvailability = (item) => {
-    dispatch({ 
-      type: 'UPDATE_MENU_ITEM', 
-      payload: { ...item, available: !item.available }
-    });
+  const toggleAvailability = async (item) => {
+    setIsLoading(true);
+    try {
+      await updateMenuItem(item.id, { 
+        ...item, 
+        available: !item.available 
+      });
+    } catch (error) {
+      console.error('Error updating availability:', error);
+      alert('เกิดข้อผิดพลาดในการอัปเดต: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -142,6 +173,19 @@ function MenuManagement() {
                   min="0"
                   step="0.01"
                   required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>ต้นทุน (บาท)</label>
+                <input
+                  type="number"
+                  name="cost"
+                  value={formData.cost}
+                  onChange={handleInputChange}
+                  placeholder="0"
+                  min="0"
+                  step="0.01"
                 />
               </div>
 
@@ -201,8 +245,8 @@ function MenuManagement() {
                 <button type="button" className="cancel-btn" onClick={handleCancel}>
                   ยกเลิก
                 </button>
-                <button type="submit" className="save-btn">
-                  {editingItem ? 'บันทึกการแก้ไข' : 'เพิ่มเมนู'}
+                <button type="submit" className="save-btn" disabled={isLoading}>
+                  {isLoading ? 'กำลังบันทึก...' : (editingItem ? 'บันทึกการแก้ไข' : 'เพิ่มเมนู')}
                 </button>
               </div>
             </form>
@@ -251,18 +295,21 @@ function MenuManagement() {
                       <button 
                         className={`toggle-btn ${item.available ? 'disable' : 'enable'}`}
                         onClick={() => toggleAvailability(item)}
+                        disabled={isLoading}
                       >
                         {item.available ? 'ปิดการขาย' : 'เปิดการขาย'}
                       </button>
                       <button 
                         className="edit-btn"
                         onClick={() => handleEdit(item)}
+                        disabled={isLoading}
                       >
                         แก้ไข
                       </button>
                       <button 
                         className="delete-btn"
                         onClick={() => handleDelete(item.id)}
+                        disabled={isLoading}
                       >
                         ลบ
                       </button>

@@ -1,13 +1,18 @@
-import React, { useState, useMemo } from 'react';
-import { useApp } from '../context/AppContext';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useApp } from '../context/SupabaseAppContext';
 import { format, startOfDay, startOfWeek, startOfMonth, startOfYear, endOfDay, endOfWeek, endOfMonth, endOfYear, subDays, subWeeks, subMonths, subYears } from 'date-fns';
 import { th } from 'date-fns/locale';
 import './Dashboard.css';
 
 function Dashboard() {
-  const { state } = useApp();
+  const { state, loadRecentOrders } = useApp();
   const [selectedPeriod, setSelectedPeriod] = useState('daily');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // โหลดข้อมูลออเดอร์เมื่อเข้าหน้า (แค่ครั้งเดียว)
+  useEffect(() => {
+    loadRecentOrders(100); // โหลดออเดอร์ล่าสุด 100 รายการ
+  }, []); // ลบ dependency เพื่อให้รันแค่ครั้งเดียว
 
   const periods = [
     { key: 'daily', label: 'รายวัน' },
@@ -85,41 +90,51 @@ function Dashboard() {
   };
 
   const salesData = useMemo(() => {
-    const { start, end } = getDateRange(selectedDate, selectedPeriod);
-    const { start: prevStart, end: prevEnd } = getPreviousDateRange(selectedDate, selectedPeriod);
-    
-    const currentOrders = state.orders.filter(order => {
-      const orderDate = new Date(order.timestamp);
-      return orderDate >= start && orderDate <= end;
-    });
+    try {
+      const { start, end } = getDateRange(selectedDate, selectedPeriod);
+      const { start: prevStart, end: prevEnd } = getPreviousDateRange(selectedDate, selectedPeriod);
+      
+      // ตรวจสอบว่า state.orders เป็น array หรือไม่
+      const orders = Array.isArray(state.orders) ? state.orders : [];
+      
+      const currentOrders = orders.filter(order => {
+        const orderDate = new Date(order.order_time || order.timestamp);
+        return !isNaN(orderDate.getTime()) && orderDate >= start && orderDate <= end;
+      });
 
-    const previousOrders = state.orders.filter(order => {
-      const orderDate = new Date(order.timestamp);
-      return orderDate >= prevStart && orderDate <= prevEnd;
-    });
+      const previousOrders = orders.filter(order => {
+        const orderDate = new Date(order.order_time || order.timestamp);
+        return !isNaN(orderDate.getTime()) && orderDate >= prevStart && orderDate <= prevEnd;
+      });
 
-    const currentRevenue = currentOrders.reduce((sum, order) => sum + order.total, 0);
-    const previousRevenue = previousOrders.reduce((sum, order) => sum + order.total, 0);
-    
-    const currentDiscount = currentOrders.reduce((sum, order) => sum + order.discount, 0);
-    const previousDiscount = previousOrders.reduce((sum, order) => sum + order.discount, 0);
+      const currentRevenue = currentOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+      const previousRevenue = previousOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+      
+      const currentDiscount = currentOrders.reduce((sum, order) => sum + (order.discount || 0), 0);
+      const previousDiscount = previousOrders.reduce((sum, order) => sum + (order.discount || 0), 0);
 
-    const revenueChange = previousRevenue === 0 ? 0 : ((currentRevenue - previousRevenue) / previousRevenue) * 100;
-    const orderChange = previousOrders.length === 0 ? 0 : ((currentOrders.length - previousOrders.length) / previousOrders.length) * 100;
+      const revenueChange = previousRevenue === 0 ? 0 : ((currentRevenue - previousRevenue) / previousRevenue) * 100;
+      const orderChange = previousOrders.length === 0 ? 0 : ((currentOrders.length - previousOrders.length) / previousOrders.length) * 100;
 
     // รายการขายดี
     const itemSales = {};
     currentOrders.forEach(order => {
-      order.items.forEach(item => {
-        if (itemSales[item.id]) {
-          itemSales[item.id].quantity += item.quantity;
-          itemSales[item.id].revenue += item.price * item.quantity;
+      const orderItems = order.order_items || order.items || [];
+      orderItems.forEach(item => {
+        const itemId = item.menu_item_id || item.id;
+        const itemName = item.menu_item_name || item.name;
+        const itemPrice = item.menu_item_price || item.price;
+        const itemQuantity = item.quantity;
+        
+        if (itemSales[itemId]) {
+          itemSales[itemId].quantity += itemQuantity;
+          itemSales[itemId].revenue += itemPrice * itemQuantity;
         } else {
-          itemSales[item.id] = {
-            name: item.name,
-            quantity: item.quantity,
-            revenue: item.price * item.quantity,
-            price: item.price
+          itemSales[itemId] = {
+            name: itemName,
+            quantity: itemQuantity,
+            revenue: itemPrice * itemQuantity,
+            price: itemPrice
           };
         }
       });
@@ -132,17 +147,24 @@ function Dashboard() {
     // การวิเคราะห์ตามหมวดหมู่
     const categoryStats = {};
     currentOrders.forEach(order => {
-      order.items.forEach(item => {
-        const menuItem = state.menuItems.find(m => m.id === item.id);
+      const orderItems = order.order_items || order.items || [];
+      orderItems.forEach(item => {
+        const itemId = item.menu_item_id || item.id;
+        const itemName = item.menu_item_name || item.name;
+        const itemPrice = item.menu_item_price || item.price;
+        const itemQuantity = item.quantity;
+        
+        // หาหมวดหมู่จากเมนู
+        const menuItem = state.menuItems.find(m => m.id === itemId);
         const category = menuItem ? menuItem.category : 'ไม่ระบุ';
         
         if (categoryStats[category]) {
-          categoryStats[category].quantity += item.quantity;
-          categoryStats[category].revenue += item.price * item.quantity;
+          categoryStats[category].quantity += itemQuantity;
+          categoryStats[category].revenue += itemPrice * itemQuantity;
         } else {
           categoryStats[category] = {
-            quantity: item.quantity,
-            revenue: item.price * item.quantity
+            quantity: itemQuantity,
+            revenue: itemPrice * itemQuantity
           };
         }
       });
@@ -153,30 +175,46 @@ function Dashboard() {
       ...data
     }));
 
-    return {
-      current: {
-        revenue: currentRevenue,
-        orders: currentOrders.length,
-        discount: currentDiscount,
-        averageOrder: currentOrders.length > 0 ? currentRevenue / currentOrders.length : 0
-      },
-      previous: {
-        revenue: previousRevenue,
-        orders: previousOrders.length,
-        discount: previousDiscount
-      },
-      changes: {
-        revenue: revenueChange,
-        orders: orderChange
-      },
-      topItems,
-      categoryData,
-      orders: currentOrders
-    };
+      return {
+        current: {
+          revenue: currentRevenue,
+          orders: currentOrders.length,
+          discount: currentDiscount,
+          averageOrder: currentOrders.length > 0 ? currentRevenue / currentOrders.length : 0
+        },
+        previous: {
+          revenue: previousRevenue,
+          orders: previousOrders.length,
+          discount: previousDiscount
+        },
+        changes: {
+          revenue: revenueChange,
+          orders: orderChange
+        },
+        topItems,
+        categoryData,
+        orders: currentOrders
+      };
+    } catch (error) {
+      console.error('Error calculating sales data:', error);
+      return {
+        current: { revenue: 0, orders: 0, discount: 0, averageOrder: 0 },
+        previous: { revenue: 0, orders: 0, discount: 0 },
+        changes: { revenue: 0, orders: 0 },
+        topItems: [],
+        categoryData: [],
+        orders: []
+      };
+    }
   }, [state.orders, state.menuItems, selectedDate, selectedPeriod]);
 
   const formatPeriodLabel = () => {
     const date = new Date(selectedDate);
+    
+    // ตรวจสอบว่า date valid หรือไม่
+    if (isNaN(date.getTime())) {
+      return 'ข้อมูลวันที่ไม่ถูกต้อง';
+    }
     
     switch (selectedPeriod) {
       case 'daily':
@@ -233,6 +271,28 @@ function Dashboard() {
 
       <div className="period-info">
         <h2>{formatPeriodLabel()}</h2>
+        {state.loading.orders && (
+          <p style={{ color: '#666', fontSize: '14px' }}>กำลังโหลดข้อมูล...</p>
+        )}
+        {state.errors.orders && (
+          <div style={{ color: '#e74c3c', fontSize: '14px' }}>
+            <p>ข้อผิดพลาด: {state.errors.orders}</p>
+            <button 
+              onClick={() => loadRecentOrders(100)}
+              style={{ 
+                backgroundColor: '#3498db', 
+                color: 'white', 
+                border: 'none', 
+                padding: '5px 10px', 
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px'
+              }}
+            >
+              ลองใหม่
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="stats-grid">
@@ -354,19 +414,27 @@ function Dashboard() {
               <div>ยอดสุทธิ</div>
             </div>
             {salesData.orders
-              .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+              .sort((a, b) => new Date(b.order_time || b.timestamp) - new Date(a.order_time || a.timestamp))
               .slice(0, 10)
-              .map(order => (
-                <div key={order.id} className="table-row">
-                  <div>{format(new Date(order.timestamp), 'HH:mm')}</div>
-                  <div>
-                    {order.items.map(item => `${item.name} x${item.quantity}`).join(', ')}
+              .map(order => {
+                const orderTime = order.order_time || order.timestamp;
+                const orderItems = order.order_items || order.items || [];
+                const timeDisplay = orderTime ? format(new Date(orderTime), 'HH:mm') : '--:--';
+                
+                return (
+                  <div key={order.id} className="table-row">
+                    <div>{timeDisplay}</div>
+                    <div>
+                      {orderItems.map(item => 
+                        `${item.menu_item_name || item.name} x${item.quantity}`
+                      ).join(', ')}
+                    </div>
+                    <div>฿{order.subtotal || 0}</div>
+                    <div>฿{order.discount || 0}</div>
+                    <div className="total">฿{order.total || 0}</div>
                   </div>
-                  <div>฿{order.subtotal}</div>
-                  <div>฿{order.discount}</div>
-                  <div className="total">฿{order.total}</div>
-                </div>
-              ))}
+                );
+              })}
           </div>
         ) : (
           <div className="no-data">ไม่มีออเดอร์ในช่วงเวลานี้</div>

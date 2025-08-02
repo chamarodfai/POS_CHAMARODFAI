@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { 
   menuItemsAPI, 
@@ -343,10 +343,12 @@ export function AppProvider({ children }) {
   // ฟังก์ชันจัดการเมนู
   const loadMenuItems = async () => {
     try {
+      console.log('Loading menu items...');
       dispatch({ type: 'SET_LOADING', payload: { type: 'menuItems', value: true } });
       dispatch({ type: 'SET_ERROR', payload: { type: 'menuItems', error: null } });
       
       const menuItems = await menuItemsAPI.getAll();
+      console.log('Menu items loaded:', menuItems);
       dispatch({ type: 'SET_MENU_ITEMS', payload: menuItems });
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: { type: 'menuItems', error: error.message } });
@@ -434,20 +436,30 @@ export function AppProvider({ children }) {
     }
   };
   
-  // ฟังก์ชันจัดการออเดอร์
-  const loadRecentOrders = async (limit = 50) => {
+  // ฟังก์ชันจัดการออเดอร์ 
+  const loadRecentOrders = useCallback(async (limit = 50) => {
+    // ป้องกันการเรียกซ้ำถ้าทำงานอยู่แล้ว
+    if (state.loading.orders) {
+      console.log('Orders already loading, skipping...');
+      return;
+    }
+    
     try {
       dispatch({ type: 'SET_LOADING', payload: { type: 'orders', value: true } });
       dispatch({ type: 'SET_ERROR', payload: { type: 'orders', error: null } });
       
       const orders = await ordersAPI.getAll(limit);
+      console.log('Orders loaded:', orders);
       dispatch({ type: 'SET_ORDERS', payload: orders });
     } catch (error) {
+      console.error('Error loading orders:', error);
       dispatch({ type: 'SET_ERROR', payload: { type: 'orders', error: error.message } });
+      // ถ้า error ให้ set เป็น array ว่างเพื่อไม่ให้ app crash
+      dispatch({ type: 'SET_ORDERS', payload: [] });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: { type: 'orders', value: false } });
     }
-  };
+  }, [state.loading.orders]);
   
   const completeOrder = async () => {
     try {
@@ -455,15 +467,35 @@ export function AppProvider({ children }) {
         throw new Error('ไม่มีรายการสินค้าในออเดอร์');
       }
       
-      const newOrder = await ordersAPI.create(state.currentOrder);
+      console.log('Creating order:', state.currentOrder);
+      
+      // สร้างออเดอร์ใหม่
+      const orderData = {
+        subtotal: state.currentOrder.subtotal,
+        discount: state.currentOrder.discount,
+        total: state.currentOrder.total,
+        appliedPromotion: state.currentOrder.appliedPromotion,
+        items: state.currentOrder.items.map(item => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          cost: item.cost || 0,
+          quantity: item.quantity
+        }))
+      };
+      
+      const newOrder = await ordersAPI.create(orderData);
+      console.log('Order created successfully:', newOrder);
+      
       dispatch({ type: 'ADD_ORDER', payload: newOrder });
       dispatch({ type: 'CLEAR_ORDER' });
       
-      // อัปเดตสถิติ
+      // อัปเดตสถิติรายวัน
       await statsAPI.updateDailyStats();
       
       return newOrder;
     } catch (error) {
+      console.error('Error completing order:', error);
       dispatch({ type: 'SET_ERROR', payload: { type: 'orders', error: error.message } });
       throw error;
     }
