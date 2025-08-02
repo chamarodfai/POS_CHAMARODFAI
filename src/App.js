@@ -8,27 +8,30 @@ import PromotionManagement from './pages/PromotionManagement';
 import Dashboard from './pages/Dashboard';
 import ConnectionStatus from './components/ConnectionStatus';
 import SupabaseStatus from './components/SupabaseStatus';
+import ErrorBoundary from './components/ErrorBoundary';
 import './App.css';
 
 function App() {
   return (
-    <AppProvider>
-      <Router>
-        <div className="App">
-          <SupabaseStatus />
-          <ConnectionStatus />
-          <Navigation />
-          <main className="main-content">
-            <Routes>
-              <Route path="/" element={<OrderPage />} />
-              <Route path="/menu" element={<MenuManagement />} />
-              <Route path="/promotions" element={<PromotionManagement />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-            </Routes>
-          </main>
-        </div>
-      </Router>
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <Router>
+          <div className="App">
+            <SupabaseStatus />
+            <ConnectionStatus />
+            <Navigation />
+            <main className="main-content">
+              <Routes>
+                <Route path="/" element={<ErrorBoundary><OrderPage /></ErrorBoundary>} />
+                <Route path="/menu" element={<ErrorBoundary><MenuManagement /></ErrorBoundary>} />
+                <Route path="/promotions" element={<ErrorBoundary><PromotionManagement /></ErrorBoundary>} />
+                <Route path="/dashboard" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
+              </Routes>
+            </main>
+          </div>
+        </Router>
+      </AppProvider>
+    </ErrorBoundary>
   );
 }
 
