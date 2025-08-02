@@ -11,8 +11,16 @@ function Dashboard() {
 
   // โหลดข้อมูลออเดอร์เมื่อเข้าหน้า (แค่ครั้งเดียว)
   useEffect(() => {
-    loadRecentOrders(100); // โหลดออเดอร์ล่าสุด 100 รายการ
-  }, []); // ลบ dependency เพื่อให้รันแค่ครั้งเดียว
+    const loadData = async () => {
+      try {
+        await loadRecentOrders(100); // โหลดออเดอร์ล่าสุด 100 รายการ
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      }
+    };
+    
+    loadData();
+  }, [loadRecentOrders]); // เพิ่ม dependency กลับมา
 
   const periods = [
     { key: 'daily', label: 'รายวัน' },
@@ -150,7 +158,7 @@ function Dashboard() {
       const orderItems = order.order_items || order.items || [];
       orderItems.forEach(item => {
         const itemId = item.menu_item_id || item.id;
-        const itemName = item.menu_item_name || item.name;
+        // const itemName = item.menu_item_name || item.name; // ไม่ได้ใช้ในส่วนนี้
         const itemPrice = item.menu_item_price || item.price;
         const itemQuantity = item.quantity;
         

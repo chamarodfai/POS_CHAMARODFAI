@@ -1,4 +1,4 @@
-import supabase, { handleSupabaseError, testConnection } from '../config/supabase';
+import supabase from '../config/supabase';
 
 // ================================
 // MENU ITEMS FUNCTIONS
@@ -481,7 +481,7 @@ export const utilsAPI = {
   // ทดสอบการเชื่อมต่อ
   async testConnection() {
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('menu_items')
         .select('count')
         .limit(1);

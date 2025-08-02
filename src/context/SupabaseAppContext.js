@@ -3,7 +3,6 @@ import {
   menuItemsAPI, 
   promotionsAPI, 
   ordersAPI, 
-  statsAPI, 
   utilsAPI 
 } from '../utils/supabaseAPI';
 
@@ -566,7 +565,8 @@ export function AppProvider({ children }) {
     };
     
     testConnection();
-  }, [loadMenuItems, loadPromotions, loadRecentOrders]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // เอา dependencies ออกเพื่อให้รันครั้งเดียว
 
   const value = {
     state,
