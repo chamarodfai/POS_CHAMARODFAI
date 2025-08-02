@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { AppProvider } from './context/SupabaseAppContext';
+import { SimpleAppProvider } from './context/SimpleAppContext';
 import Navigation from './components/Navigation';
 import OrderPage from './pages/OrderPage';
 import MenuManagement from './pages/MenuManagement';
@@ -14,7 +14,7 @@ import './App.css';
 function App() {
   return (
     <ErrorBoundary>
-      <AppProvider>
+      <SimpleAppProvider>
         <Router>
           <div className="App">
             <SupabaseStatus />
@@ -30,7 +30,7 @@ function App() {
             </main>
           </div>
         </Router>
-      </AppProvider>
+      </SimpleAppProvider>
     </ErrorBoundary>
   );
 }
