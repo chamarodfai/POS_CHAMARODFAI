@@ -91,13 +91,13 @@ function appReducer(state, action) {
     case 'ADD_MENU_ITEM':
       return {
         ...state,
-        menuItems: [...state.menuItems, action.payload]
+        menuItems: [...(state.menuItems || []), action.payload]
       };
       
     case 'UPDATE_MENU_ITEM':
       return {
         ...state,
-        menuItems: state.menuItems.map(item => 
+        menuItems: (state.menuItems || []).map(item => 
           item.id === action.payload.id ? action.payload : item
         )
       };
@@ -105,7 +105,7 @@ function appReducer(state, action) {
     case 'DELETE_MENU_ITEM':
       return {
         ...state,
-        menuItems: state.menuItems.filter(item => item.id !== action.payload)
+        menuItems: (state.menuItems || []).filter(item => item.id !== action.payload)
       };
     
     // จัดการโปรโมชั่น
