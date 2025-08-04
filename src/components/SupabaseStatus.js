@@ -1,6 +1,6 @@
 // src/components/SupabaseStatus.js
 import React, { useState, useEffect } from 'react';
-import { testConnection, checkDatabaseHealth } from '../config/supabase';
+import supabase from '../config/supabase';
 
 const SupabaseStatus = () => {
   const [connectionStatus, setConnectionStatus] = useState('checking');
@@ -16,17 +16,17 @@ const SupabaseStatus = () => {
     
     try {
       // Test basic connection
-      const connection = await testConnection();
+      const { data, error } = await supabase
+        .from('menu_items')
+        .select('count')
+        .limit(1);
       
-      if (connection.success) {
-        setConnectionStatus('connected');
-        
-        // Check database health
-        const health = await checkDatabaseHealth();
-        setHealthStatus(health);
-      } else {
+      if (error) {
         setConnectionStatus('failed');
-        console.error('Connection failed:', connection.message);
+        console.error('Connection failed:', error.message);
+      } else {
+        setConnectionStatus('connected');
+        setHealthStatus({ success: true, message: 'Database is healthy' });
       }
     } catch (error) {
       setConnectionStatus('error');

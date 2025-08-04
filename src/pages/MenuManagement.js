@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { useApp } from '../context/SupabaseAppContext';
+import { useSimpleApp } from '../context/SimpleAppContext2';
 import './MenuManagement.css';
 
 function MenuManagement() {
-  const { state, addMenuItem, updateMenuItem, deleteMenuItem } = useApp();
+  const { menuItems, api } = useSimpleApp();
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -17,7 +17,9 @@ function MenuManagement() {
     available: true
   });
 
-  const categories = [...new Set(state.menuItems.map(item => item.category))];
+  // Ensure menuItems is always an array
+  const safeMenuItems = menuItems || [];
+  const categories = [...new Set(safeMenuItems.map(item => item.category))].filter(Boolean);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -41,15 +43,16 @@ function MenuManagement() {
       const itemData = {
         ...formData,
         price: parseFloat(formData.price),
-        cost: parseFloat(formData.cost) || 0
+        cost: parseFloat(formData.cost) || 0,
+        image_url: formData.image // ✅ แก้ไขให้ตรงกับ database
       };
 
       if (editingItem) {
-        await updateMenuItem(editingItem.id, itemData);
+        await api.updateMenuItem(editingItem.id, itemData);
         setEditingItem(null);
         alert('แก้ไขเมนูสำเร็จ!');
       } else {
-        await addMenuItem(itemData);
+        await api.createMenuItem(itemData);
         setIsAddingItem(false);
         alert('เพิ่มเมนูสำเร็จ!');
       }
@@ -79,7 +82,7 @@ function MenuManagement() {
       cost: item.cost ? item.cost.toString() : '',
       category: item.category,
       description: item.description,
-      image: item.image,
+      image: item.image_url || '', // ✅ แก้ไขให้ตรงกับ database
       available: item.available
     });
     setIsAddingItem(true);
@@ -89,7 +92,7 @@ function MenuManagement() {
     if (window.confirm('คุณต้องการลบรายการนี้หรือไม่?')) {
       setIsLoading(true);
       try {
-        await deleteMenuItem(itemId);
+        await api.deleteMenuItem(itemId);
         alert('ลบเมนูสำเร็จ!');
       } catch (error) {
         console.error('Error deleting menu item:', error);
@@ -117,10 +120,11 @@ function MenuManagement() {
   const toggleAvailability = async (item) => {
     setIsLoading(true);
     try {
-      await updateMenuItem(item.id, { 
+      await api.updateMenuItem(item.id, { 
         ...item, 
         available: !item.available 
       });
+      console.log(`✅ Updated ${item.name} availability to ${!item.available}`);
     } catch (error) {
       console.error('Error updating availability:', error);
       alert('เกิดข้อผิดพลาดในการอัปเดต: ' + error.message);
@@ -257,11 +261,11 @@ function MenuManagement() {
       <div className="menu-stats">
         <div className="stat-card">
           <h3>เมนูทั้งหมด</h3>
-          <p>{state.menuItems.length}</p>
+          <p>{safeMenuItems.length}</p>
         </div>
         <div className="stat-card">
           <h3>พร้อมจำหน่าย</h3>
-          <p>{state.menuItems.filter(item => item.available).length}</p>
+          <p>{safeMenuItems.filter(item => item.available).length}</p>
         </div>
         <div className="stat-card">
           <h3>หมวดหมู่</h3>
@@ -270,11 +274,61 @@ function MenuManagement() {
       </div>
 
       <div className="menu-list">
+        {/* Show all menu items if no categories */}
+        {categories.length === 0 && safeMenuItems.length > 0 && (
+          <div className="category-section">
+            <h2 className="category-title">เมนูทั้งหมด</h2>
+            <div className="menu-items">
+              {safeMenuItems.map(item => (
+                <div key={item.id} className={`menu-item-card ${!item.available ? 'unavailable' : ''}`}>
+                  <div className="item-info">
+                    <div className="item-header">
+                      <h3>{item.name}</h3>
+                      <div className="item-status">
+                        <span className={`status-badge ${item.available ? 'available' : 'unavailable'}`}>
+                          {item.available ? 'พร้อมจำหน่าย' : 'ไม่พร้อมจำหน่าย'}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="item-description">{item.description}</p>
+                    <div className="item-price">฿{item.price}</div>
+                  </div>
+                  
+                  <div className="item-actions">
+                    <button 
+                      className={`toggle-btn ${item.available ? 'disable' : 'enable'}`}
+                      onClick={() => toggleAvailability(item)}
+                      disabled={isLoading}
+                    >
+                      {item.available ? 'ปิดการขาย' : 'เปิดการขาย'}
+                    </button>
+                    <button 
+                      className="edit-btn"
+                      onClick={() => handleEdit(item)}
+                      disabled={isLoading}
+                    >
+                      แก้ไข
+                    </button>
+                    <button 
+                      className="delete-btn"
+                      onClick={() => handleDelete(item.id)}
+                      disabled={isLoading}
+                    >
+                      ลบ
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* Show by categories if categories exist */}
         {categories.map(category => (
           <div key={category} className="category-section">
             <h2 className="category-title">{category}</h2>
             <div className="menu-items">
-              {state.menuItems
+              {safeMenuItems
                 .filter(item => item.category === category)
                 .map(item => (
                   <div key={item.id} className={`menu-item-card ${!item.available ? 'unavailable' : ''}`}>
@@ -321,7 +375,7 @@ function MenuManagement() {
         ))}
       </div>
 
-      {state.menuItems.length === 0 && (
+      {safeMenuItems.length === 0 && (
         <div className="empty-state">
           <h3>ยังไม่มีเมนูอาหาร</h3>
           <p>เริ่มต้นด้วยการเพิ่มเมนูแรกของคุณ</p>

@@ -4,7 +4,7 @@ import {
   promotionsAPI, 
   ordersAPI, 
   utilsAPI 
-} from '../utils/supabaseAPI';
+} from '../utils/apiRouter';
 
 const SimpleAppContext = createContext();
 
@@ -250,6 +250,76 @@ export function SimpleAppProvider({ children }) {
     }
   };
 
+  // Menu management functions
+  const addMenuItem = async (itemData) => {
+    try {
+      const newItem = await menuItemsAPI.create(itemData);
+      setMenuItems(prev => [...prev, newItem]);
+      return newItem;
+    } catch (error) {
+      console.error('Error adding menu item:', error);
+      throw error;
+    }
+  };
+
+  const updateMenuItem = async (id, updates) => {
+    try {
+      const updatedItem = await menuItemsAPI.update(id, updates);
+      setMenuItems(prev => 
+        prev.map(item => item.id === id ? updatedItem : item)
+      );
+      return updatedItem;
+    } catch (error) {
+      console.error('Error updating menu item:', error);
+      throw error;
+    }
+  };
+
+  const deleteMenuItem = async (id) => {
+    try {
+      await menuItemsAPI.delete(id);
+      setMenuItems(prev => prev.filter(item => item.id !== id));
+    } catch (error) {
+      console.error('Error deleting menu item:', error);
+      throw error;
+    }
+  };
+
+  // Promotion management functions
+  const addPromotion = async (promotionData) => {
+    try {
+      const newPromotion = await promotionsAPI.create(promotionData);
+      setPromotions(prev => [...prev, newPromotion]);
+      return newPromotion;
+    } catch (error) {
+      console.error('Error adding promotion:', error);
+      throw error;
+    }
+  };
+
+  const updatePromotion = async (id, updates) => {
+    try {
+      const updatedPromotion = await promotionsAPI.update(id, updates);
+      setPromotions(prev => 
+        prev.map(promotion => promotion.id === id ? updatedPromotion : promotion)
+      );
+      return updatedPromotion;
+    } catch (error) {
+      console.error('Error updating promotion:', error);
+      throw error;
+    }
+  };
+
+  const deletePromotion = async (id) => {
+    try {
+      await promotionsAPI.delete(id);
+      setPromotions(prev => prev.filter(promotion => promotion.id !== id));
+    } catch (error) {
+      console.error('Error deleting promotion:', error);
+      throw error;
+    }
+  };
+
   // Load initial data
   useEffect(() => {
     const initializeData = async () => {
@@ -294,7 +364,13 @@ export function SimpleAppProvider({ children }) {
     applyPromotion,
     removePromotion,
     clearOrder,
-    completeOrder
+    completeOrder,
+    addMenuItem,
+    updateMenuItem,
+    deleteMenuItem,
+    addPromotion,
+    updatePromotion,
+    deletePromotion
   };
 
   return (

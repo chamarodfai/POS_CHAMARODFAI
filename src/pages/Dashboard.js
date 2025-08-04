@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useApp } from '../context/SupabaseAppContext';
+import { useSimpleApp } from '../context/SimpleAppContext2';
 import { format, startOfDay, startOfWeek, startOfMonth, startOfYear, endOfDay, endOfWeek, endOfMonth, endOfYear, subDays, subWeeks, subMonths, subYears } from 'date-fns';
 import { th } from 'date-fns/locale';
 import './Dashboard.css';
 
 function Dashboard() {
-  const { state, loadRecentOrders } = useApp();
+  const { state, loadRecentOrders } = useSimpleApp();
   const [selectedPeriod, setSelectedPeriod] = useState('daily');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -102,8 +102,8 @@ function Dashboard() {
       const { start, end } = getDateRange(selectedDate, selectedPeriod);
       const { start: prevStart, end: prevEnd } = getPreviousDateRange(selectedDate, selectedPeriod);
       
-      // ตรวจสอบว่า state.orders เป็น array หรือไม่
-      const orders = Array.isArray(state.orders) ? state.orders : [];
+      // ตรวจสอบว่า state และ state.orders มีอยู่และเป็น array หรือไม่
+      const orders = (state && Array.isArray(state.orders)) ? state.orders : [];
       
       const currentOrders = orders.filter(order => {
         const orderDate = new Date(order.order_time || order.timestamp);
@@ -131,19 +131,21 @@ function Dashboard() {
       orderItems.forEach(item => {
         const itemId = item.menu_item_id || item.id;
         const itemName = item.menu_item_name || item.name;
-        const itemPrice = item.menu_item_price || item.price;
-        const itemQuantity = item.quantity;
+        const itemPrice = item.menu_item_price || item.price || 0;
+        const itemQuantity = item.quantity || 0;
         
-        if (itemSales[itemId]) {
-          itemSales[itemId].quantity += itemQuantity;
-          itemSales[itemId].revenue += itemPrice * itemQuantity;
-        } else {
-          itemSales[itemId] = {
-            name: itemName,
-            quantity: itemQuantity,
-            revenue: itemPrice * itemQuantity,
-            price: itemPrice
-          };
+        if (itemId && itemName && itemQuantity > 0) {
+          if (itemSales[itemId]) {
+            itemSales[itemId].quantity += itemQuantity;
+            itemSales[itemId].revenue += itemPrice * itemQuantity;
+          } else {
+            itemSales[itemId] = {
+              name: itemName,
+              quantity: itemQuantity,
+              revenue: itemPrice * itemQuantity,
+              price: itemPrice
+            };
+          }
         }
       });
     });
@@ -158,22 +160,24 @@ function Dashboard() {
       const orderItems = order.order_items || order.items || [];
       orderItems.forEach(item => {
         const itemId = item.menu_item_id || item.id;
-        // const itemName = item.menu_item_name || item.name; // ไม่ได้ใช้ในส่วนนี้
-        const itemPrice = item.menu_item_price || item.price;
-        const itemQuantity = item.quantity;
+        const itemPrice = item.menu_item_price || item.price || 0;
+        const itemQuantity = item.quantity || 0;
         
-        // หาหมวดหมู่จากเมนู
-        const menuItem = state.menuItems.find(m => m.id === itemId);
-        const category = menuItem ? menuItem.category : 'ไม่ระบุ';
-        
-        if (categoryStats[category]) {
-          categoryStats[category].quantity += itemQuantity;
-          categoryStats[category].revenue += itemPrice * itemQuantity;
-        } else {
-          categoryStats[category] = {
-            quantity: itemQuantity,
-            revenue: itemPrice * itemQuantity
-          };
+        if (itemId && itemQuantity > 0) {
+          // หาหมวดหมู่จากเมนู - ตรวจสอบว่า menuItems มีอยู่หรือไม่
+          const menuItems = (state && Array.isArray(state.menuItems)) ? state.menuItems : [];
+          const menuItem = menuItems.find(m => m.id === itemId);
+          const category = menuItem ? menuItem.category : 'ไม่ระบุ';
+          
+          if (categoryStats[category]) {
+            categoryStats[category].quantity += itemQuantity;
+            categoryStats[category].revenue += itemPrice * itemQuantity;
+          } else {
+            categoryStats[category] = {
+              quantity: itemQuantity,
+              revenue: itemPrice * itemQuantity
+            };
+          }
         }
       });
     });
@@ -214,7 +218,7 @@ function Dashboard() {
         orders: []
       };
     }
-  }, [state.orders, state.menuItems, selectedDate, selectedPeriod]);
+  }, [state, selectedDate, selectedPeriod]);
 
   const formatPeriodLabel = () => {
     const date = new Date(selectedDate);
@@ -279,10 +283,10 @@ function Dashboard() {
 
       <div className="period-info">
         <h2>{formatPeriodLabel()}</h2>
-        {state.loading.orders && (
+        {state && state.loading && state.loading.orders && (
           <p style={{ color: '#666', fontSize: '14px' }}>กำลังโหลดข้อมูล...</p>
         )}
-        {state.errors.orders && (
+        {state && state.errors && state.errors.orders && (
           <div style={{ color: '#e74c3c', fontSize: '14px' }}>
             <p>ข้อผิดพลาด: {state.errors.orders}</p>
             <button 

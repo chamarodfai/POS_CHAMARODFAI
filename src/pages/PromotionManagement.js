@@ -1,11 +1,36 @@
 import React, { useState } from 'react';
-import { useApp } from '../context/SupabaseAppContext';
+import { useSimpleApp } from '../context/SimpleAppContext2';
 import './PromotionManagement.css';
 
 function PromotionManagement() {
-  const { state, dispatch } = useApp();
+  const { promotions } = useSimpleApp();
   const [isAddingPromotion, setIsAddingPromotion] = useState(false);
   const [editingPromotion, setEditingPromotion] = useState(null);
+  const [localPromotions, setLocalPromotions] = useState([
+    {
+      id: 1,
+      name: 'ลด 10%',
+      type: 'percentage',
+      value: 10,
+      description: 'ลดราคา 10% สำหรับการสั่งซื้อขั้นต่ำ 100 บาท',
+      minAmount: 100,
+      active: true,
+      startDate: '2025-01-01',
+      endDate: '2025-12-31'
+    },
+    {
+      id: 2,
+      name: 'ลดค่าส่ง',
+      type: 'fixed',
+      value: 30,
+      description: 'ลดค่าส่ง 30 บาท',
+      minAmount: 200,
+      active: true,
+      startDate: '2025-01-01',
+      endDate: '2025-12-31'
+    }
+  ]);
+  
   const [formData, setFormData] = useState({
     name: '',
     type: 'percentage',
@@ -17,6 +42,9 @@ function PromotionManagement() {
     endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   });
 
+  // ใช้ promotions จาก context หรือ localPromotions
+  const displayPromotions = promotions || localPromotions;
+
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
@@ -25,7 +53,7 @@ function PromotionManagement() {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!formData.name || !formData.value) {
@@ -44,27 +72,39 @@ function PromotionManagement() {
       minAmount: formData.minAmount ? parseFloat(formData.minAmount) : null
     };
 
-    if (editingPromotion) {
-      dispatch({ 
-        type: 'UPDATE_PROMOTION', 
-        payload: { ...promotionData, id: editingPromotion.id }
-      });
-      setEditingPromotion(null);
-    } else {
-      dispatch({ type: 'ADD_PROMOTION', payload: promotionData });
-      setIsAddingPromotion(false);
-    }
+    try {
+      if (editingPromotion) {
+        // Mock update
+        setLocalPromotions(prev => prev.map(p => 
+          p.id === editingPromotion.id ? { ...promotionData, id: editingPromotion.id } : p
+        ));
+        setEditingPromotion(null);
+        alert('แก้ไขโปรโมชั่นสำเร็จ!');
+      } else {
+        // Mock add
+        const newPromotion = {
+          ...promotionData,
+          id: Date.now()
+        };
+        setLocalPromotions(prev => [...prev, newPromotion]);
+        setIsAddingPromotion(false);
+        alert('เพิ่มโปรโมชั่นสำเร็จ!');
+      }
 
-    setFormData({
-      name: '',
-      type: 'percentage',
-      value: '',
-      description: '',
-      minAmount: '',
-      active: true,
-      startDate: new Date().toISOString().split('T')[0],
-      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    });
+      setFormData({
+        name: '',
+        type: 'percentage',
+        value: '',
+        description: '',
+        minAmount: '',
+        active: true,
+        startDate: new Date().toISOString().split('T')[0],
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      });
+    } catch (error) {
+      console.error('Error saving promotion:', error);
+      alert('เกิดข้อผิดพลาด: ' + error.message);
+    }
   };
 
   const handleEdit = (promotion) => {
@@ -82,9 +122,11 @@ function PromotionManagement() {
     setIsAddingPromotion(true);
   };
 
-  const handleDelete = (promotionId) => {
+  const handleDelete = async (promotionId) => {
     if (window.confirm('คุณต้องการลบโปรโมชั่นนี้หรือไม่?')) {
-      dispatch({ type: 'DELETE_PROMOTION', payload: promotionId });
+      // Mock delete
+      setLocalPromotions(prev => prev.filter(p => p.id !== promotionId));
+      alert('ลบโปรโมชั่นสำเร็จ!');
     }
   };
 
@@ -103,11 +145,11 @@ function PromotionManagement() {
     });
   };
 
-  const toggleStatus = (promotion) => {
-    dispatch({ 
-      type: 'UPDATE_PROMOTION', 
-      payload: { ...promotion, active: !promotion.active }
-    });
+  const toggleStatus = async (promotion) => {
+    // Mock toggle status
+    setLocalPromotions(prev => prev.map(p => 
+      p.id === promotion.id ? { ...p, active: !p.active } : p
+    ));
   };
 
   const formatPromotionValue = (promotion) => {
@@ -280,24 +322,24 @@ function PromotionManagement() {
       <div className="promotion-stats">
         <div className="stat-card">
           <h3>โปรโมชั่นทั้งหมด</h3>
-          <p>{state.promotions.length}</p>
+          <p>{displayPromotions.length}</p>
         </div>
         <div className="stat-card">
           <h3>ใช้งานได้</h3>
-          <p>{state.promotions.filter(p => getPromotionStatus(p) === 'active').length}</p>
+          <p>{displayPromotions.filter(p => getPromotionStatus(p) === 'active').length}</p>
         </div>
         <div className="stat-card">
           <h3>ปิดการใช้งาน</h3>
-          <p>{state.promotions.filter(p => !p.active).length}</p>
+          <p>{displayPromotions.filter(p => !p.active).length}</p>
         </div>
         <div className="stat-card">
           <h3>หมดอายุ</h3>
-          <p>{state.promotions.filter(p => isPromotionExpired(p.endDate)).length}</p>
+          <p>{displayPromotions.filter(p => isPromotionExpired(p.endDate)).length}</p>
         </div>
       </div>
 
       <div className="promotions-list">
-        {state.promotions.length === 0 ? (
+        {displayPromotions.length === 0 ? (
           <div className="empty-state">
             <h3>ยังไม่มีโปรโมชั่น</h3>
             <p>เริ่มต้นด้วยการสร้างโปรโมชั่นแรกของคุณ</p>
@@ -310,7 +352,7 @@ function PromotionManagement() {
           </div>
         ) : (
           <div className="promotion-grid">
-            {state.promotions.map(promotion => {
+            {displayPromotions.map(promotion => {
               const status = getPromotionStatus(promotion);
               return (
                 <div key={promotion.id} className={`promotion-card ${status}`}>
